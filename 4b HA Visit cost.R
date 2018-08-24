@@ -43,9 +43,8 @@ gopc$cost <- gopc$cost * gopc$gopc
 sopc <- merge(sopc, cost, by.x = "yr", by.y = "sopc", all.x = T)
 sopc$cost <- sopc$cost * sopc$sopc
 
-# Inpatients - case type?
+# Inpatients 
 str(inpatient)
-table(inpatient$a_spec, exclude = NULL)
 inpatient$los <- inpatient$los_day
 # Assume all LOS = 0 are charged as 1 day -> likely to be day case
 table(inpatient$los == 0, exclude = NULL)
@@ -54,97 +53,72 @@ inpatient$los[inpatient$los == 0] <- 1
 
 # what type of inpatient costs are there? HA annual report vs Gazette costs
 # "ICU", "HDU", "PRI", "PSY" = "MEN_ILL", "INF", "MEN_HAND"
-icu <- inpatient[, list(icu = sum(los)), by = list(serial_no, yr, a_spec)]
-
+table(inpatient$a_spec, exclude = NULL)
 # No MUL
 # ?exclude OBS?
 # ICU/HDU
 # Private ward
 # Psychiatry ward
 # General ward
+# Haemodialysis
+# Hemodialysis visits
 
-exclude <- c("ICU", "HDU", "PRI", "PSY")
-inpatient$type <- "NA"
-inpatient[a_spec=="INF", c("type")] <- "INF"
-inpatient[a_spec=="PSY", c("type")] <- "MEN_ILL"
-inpatient[a_spec=="MH", c("type")] <- "MEN_HAND"
-inpatient[type=="NA", c("type")] <- "GEN"
+ip <- inpatient
+ip$a_spec[!(ip$a_spec %in% c("INF", "PSY", "MH"))] <- "GEN"   # "ICU", "HDU", "PRI"
+ip <- ip[, list(los = sum(los, na.rm=T)), by = list(serial_no, a_spec, yr)]
 
 
 #### Unit costs for inpatient days, from 2006 to 2014
 # Costs for general / infirmary / mentally ill / mentally handicapped wards are different
+cost <- data.table(yr = c(2006:2014))
+cost$GEN <- c(3290, 3440, 3650, 3590, 3600, 3950, 4180, 4330, 4600)
+cost$INF <- c(990, 1030, 1090, 1130, 1130, 1270, 1360, 1400, 1470)
+cost$PSY <- c(1560, 1720, 1890, 1780, 1750, 1930, 2150, 2270, 2470) # "MEN_ILL"
+cost$MH <- c(960, 1030, 1050, 1070, 1070, 1190, 1220, 1290, 1400) # "MEN_HAND"
+cost$HDU <- c()
+cost$ICU <- c()
+cost$PRI <- c()
 
-ip <- ip[order(yr)]
-ip$cost <- ""
-ip$cost <- as.numeric(ip$cost)
-ip$ip <- as.numeric (ip$ip)
-ip[yr=="2006" & type =="GEN", c("cost")] <- 3290
-ip[yr=="2006" & type =="INF", c("cost")] <- 990
-ip[yr=="2006" & type =="MEN_ILL", c("cost")] <- 1560
-ip[yr=="2006" & type =="MEN_HAND", c("cost")] <- 960
-ip[yr=="2007" & type =="GEN", c("cost")] <- 3440
-ip[yr=="2007" & type =="INF", c("cost")] <- 1030
-ip[yr=="2007" & type =="MEN_ILL", c("cost")] <- 1720
-ip[yr=="2007" & type =="MEN_HAND", c("cost")] <- 1030
-ip[yr=="2008" & type =="GEN", c("cost")] <- 3650
-ip[yr=="2008" & type =="INF", c("cost")] <- 1090
-ip[yr=="2008" & type =="MEN_ILL", c("cost")] <- 1890
-ip[yr=="2008" & type =="MEN_HAND", c("cost")] <- 1050
-ip[yr=="2009" & type =="GEN", c("cost")] <- 3590
-ip[yr=="2009" & type =="INF", c("cost")] <- 1130
-ip[yr=="2009" & type =="MEN_ILL", c("cost")] <- 1780
-ip[yr=="2009" & type =="MEN_HAND", c("cost")] <- 1070
-ip[yr=="2010" & type =="GEN", c("cost")] <- 3600
-ip[yr=="2010" & type =="INF", c("cost")] <- 1130
-ip[yr=="2010" & type =="MEN_ILL", c("cost")] <- 1750
-ip[yr=="2010" & type =="MEN_HAND", c("cost")] <- 1070
-ip[yr=="2011" & type =="GEN", c("cost")] <- 3950
-ip[yr=="2011" & type =="INF", c("cost")] <- 1270
-ip[yr=="2011" & type =="MEN_ILL", c("cost")] <- 1930
-ip[yr=="2011" & type =="MEN_HAND", c("cost")] <- 1190
-ip[yr=="2012" & type =="GEN", c("cost")] <- 4180
-ip[yr=="2012" & type =="INF", c("cost")] <- 1360
-ip[yr=="2012" & type =="MEN_ILL", c("cost")] <- 2150
-ip[yr=="2012" & type =="MEN_HAND", c("cost")] <- 1220
-ip[yr=="2013" & type =="GEN", c("cost")] <- 4330
-ip[yr=="2013" & type =="INF", c("cost")] <- 1400
-ip[yr=="2013" & type =="MEN_ILL", c("cost")] <- 2270
-ip[yr=="2013" & type =="MEN_HAND", c("cost")] <- 1290
-ip[yr=="2014" & type =="GEN", c("cost")] <- 4600
-ip[yr=="2014" & type =="INF", c("cost")] <- 1470
-ip[yr=="2014" & type =="MEN_ILL", c("cost")] <- 2470
-ip[yr=="2014" & type =="MEN_HAND", c("cost")] <- 1400
-ip$cost <- ip$cost * ip$ip
+# reshape to long
+cost <- melt(cost, id.vars="yr", variable.name = "a_spec", value.name = "cost")
+cost
+ip <- merge(ip, cost, by.x = c("yr", "a_spec"), by.y = c("yr", "a_spec"), all.x = T)
+ip$cost <- ip$cost * ip$los
+
+# reshape to wide (cost breakdown by a_spec type)
+ip_by_spec <- dcast(ip[, c("serial_no", "yr", "a_spec", "cost")], serial_no + yr ~ a_spec, value.var="cost")
+# aggregrate IP costs
+ip <- ip[, list(cost = sum(cost, na.rm=T)), by = list(serial_no, yr)]
 
 #### Combine all visit costs for each individual
-ae <- ae[, .(serial_no, yr, cost)]
-gopc <- gopc[, .(serial_no, yr, cost)]
-sopc <- sopc[, .(serial_no, yr, cost)]
-ip <- ip[, .(serial_no, yr, cost)]
-all <- rbind(ae, gopc, sopc, ip)
-all <- all[, .(cost=sum(cost)), by = c("serial_no", "yr")][order(serial_no)]
+ae <- ae[, .(serial_no, yr, ae_cost=cost)]
+gopc <- gopc[, .(serial_no, yr, gopc_cost=cost)]
+sopc <- sopc[, .(serial_no, yr, sopc_cost=cost)]
+ip <- ip[, .(serial_no, yr, ip_cost=cost)]
+
+all <- Reduce(function(x,y) merge(x, y, all=TRUE, by=c("serial_no", "yr")), list(ae, gopc, sopc, ip))
+
+all <- data.frame(all)
+stopifnot(anyDuplicated(all[,c('serial_no', 'yr')])==0)
+
+types <- names(all)[!(names(all) %in% c("serial_no", "yr"))]
+all[, types] <- sapply(all[, types], as.numeric)
+all$cost <- rowSums(all[types], na.rm=T)
 
 ### Convert nominal to real spending
 #(P.2) Spending #1: Convert nominal spending into real spending in local currency units (preferred method is using GDP deflator, and preferred base year is 2010)
+gdp <- data.frame(yr = c(2006:2014))
+gdp$deflator <- c(0.9591, 0.9895, 1.0012, 0.9977, 1, 1.0397, 1.0759, 1.0958, 1.1273)
 
-all$deflator <- as.numeric("NA")
-all[yr=="2006", c("deflator")] <- 0.9591
-all[yr=="2007", c("deflator")] <- 0.9895
-all[yr=="2008", c("deflator")] <- 1.0012
-all[yr=="2009", c("deflator")] <- 0.9977
-all[yr=="2010", c("deflator")] <- 1
-all[yr=="2011", c("deflator")] <- 1.0397
-all[yr=="2012", c("deflator")] <- 1.0759
-all[yr=="2013", c("deflator")] <- 1.0958
-all[yr=="2014", c("deflator")] <- 1.1273
+all <- merge(all, gdp, by = "yr", all.x = T)
 all$cost <- all$cost * all$deflator
 
 # tidy up dataframe
-all <- all[, sum(cost), by = .(serial_no, yr)]
-names(all) <- c("serial_no", "yr", "visit_cost")
-all$yr <- as.factor(all$yr)
+names(all)[names(all) %in% "cost"] <- "visit_cost"
 
 saveRDS(all, file = "4b visitcost.rds")
+
+
 
 
 
@@ -159,6 +133,8 @@ saveRDS(all, file = "4b visitcost.rds")
 # Inpatients assume ALL LOS = 0 as chronic hemodialysis (day case), 
 # LOS of 1 or more days = acute hemodialysis
 load("Rdata/haemodialysis.Rdata")
+
+# str(haemodialysis.items)
 haemodialysis$yr <- as.numeric(haemodialysis$yr)
 d <- merge(d, haemodialysis, all = T, by = c("serial_no", "yr"))
 d[is.na(d)] <- 0
